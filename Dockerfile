@@ -1,5 +1,5 @@
-# Start with an official Python slim image. [cite_start]'bullseye' is a stable Debian release. [cite: 2]
-[cite_start]FROM python:3.11-slim-bullseye [cite: 3]
+# Start with an official Python slim image. 'bullseye' is a stable Debian release.
+FROM python:3.11-slim-bullseye
 
 # Set environment variables to prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,17 +17,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# [cite_start]Set the working directory inside the container [cite: 4]
+# Set the working directory inside the container
 WORKDIR /app
 
 # Copy the Python requirements file and install dependencies
 COPY requirements.txt .
-[cite_start]RUN pip install --no-cache-dir -r requirements.txt [cite: 5]
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of your application code into the container
 COPY . .
 
-# [cite_start]Expose the port your app will listen on [cite: 6]
+# Expose the port your app will listen on
 EXPOSE 8080
 
 # The command to run your Flask application using the Gunicorn production server
