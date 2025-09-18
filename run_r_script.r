@@ -96,11 +96,13 @@ tryCatch({
     }
   }
   cat(sprintf("Plot object 'p' found (class: %s)\n", paste(class(p), collapse = ", ")))
-  # Normalize background
+  # Normalize background and margins
   bg_color <- "#0a0a0a"
   p <- p + ggplot2::theme(
     plot.background = ggplot2::element_rect(fill = bg_color, color = NA),
-    plot.margin = ggplot2::margin(0, 0, 0, 0)
+    # UPDATED: Increased margins to prevent labels from being cut off.
+    # The bottom margin (b) is larger to account for rotated x-axis text.
+    plot.margin = ggplot2::margin(t = 15, r = 25, b = 45, l = 15)
   )
 }, error = function(e) {
   stop(paste("Error executing R code:", e$message))
