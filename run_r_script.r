@@ -95,7 +95,7 @@ tryCatch({
     filename = output_image_file,
     plot = p,
     device = "png",
-    width = 6.4,
+    width = 7.68,
     height = 4.8,
     units = "in",
     dpi = 150,
