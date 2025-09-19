@@ -10,6 +10,7 @@ import traceback
 import subprocess
 import matplotlib
 import psycopg2
+import matplotlib.colors as mcolors
 from psycopg2 import pool
 
 matplotlib.use('Agg')
