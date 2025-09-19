@@ -79,7 +79,7 @@ tryCatch({
   # Apply consistent background and slightly larger margins to prevent clipping.
   p <- p + theme(
     plot.background = element_rect(fill = "#0a0a0a", color = NA),
-    plot.margin = margin(t = 20, r = 25, b = 55, l = 15) # Increased bottom margin for rotated labels
+    plot.margin = margin(t = 20, r = 25, b = 20, l = 15) # Increased bottom margin for rotated labels
   )
   
 }, error = function(e) {
