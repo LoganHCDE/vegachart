@@ -44,7 +44,8 @@ if (!is.null(csv_data_file)) {
   df <- tryCatch({
     # Prefer the faster readr::read_csv if available
     if (requireNamespace("readr", quietly = TRUE)) {
-      readr::read_csv(csv_data_file, show_col_types = FALSE, progress = FALSE)
+      # **FIX: Removed the 'show_col_types' argument for compatibility with older readr versions**
+      readr::read_csv(csv_data_file, progress = FALSE)
     } else {
       read.csv(csv_data_file, stringsAsFactors = FALSE, check.names = FALSE)
     }
