@@ -1,228 +1,111 @@
 #!/usr/bin/env Rscript
 
-# Standalone R script for executing user R code via subprocess
-# Arguments: input_r_code_file output_image_file [csv_data_file]
+# A robust script for executing user-provided R code (expecting a ggplot object)
+# and saving the output as a PNG image.
 
+# --- Argument Parsing ---
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2) {
-  stop("Usage: Rscript run_r_script.R <input_r_code_file> <output_image_file> [csv_data_file]")
+  stop("Usage: Rscript run_r_script.R <input_r_code_file> <output_image_file> [csv_data_file]", call. = FALSE)
 }
 
 input_r_code_file <- args[1]
 output_image_file <- args[2]
 csv_data_file <- if (length(args) >= 3) args[3] else NULL
 
+# --- Pre-flight Checks ---
 if (!file.exists(input_r_code_file)) {
-  stop(paste("Input R code file does not exist:", input_r_code_file))
+  stop(paste("Input R code file does not exist:", input_r_code_file), call. = FALSE)
 }
 if (!is.null(csv_data_file) && !file.exists(csv_data_file)) {
-  stop(paste("CSV data file does not exist:", csv_data_file))
+  stop(paste("CSV data file does not exist:", csv_data_file), call. = FALSE)
 }
 
-# Diagnostics
-cat("R version:", paste(R.version$major, R.version$minor, sep = "."), "\n")
-cat("Platform:", R.version$platform, "\n")
-cat("Capabilities(cairo):", tryCatch(isTRUE(capabilities("cairo")), error = function(e) FALSE), "\n")
-cat("Env VC_USE_RAGG:", Sys.getenv("VC_USE_RAGG", "0"), "\n")
-cat("Input file:", input_r_code_file, "\n")
-cat("Output file:", output_image_file, "\n")
-
-# Load required libraries
-cat("Loading libraries...\n")
-tryCatch({
-  suppressPackageStartupMessages({
-    if (!requireNamespace("ggplot2", quietly = TRUE)) {
-      stop("The 'ggplot2' package is not installed. Please install it in R with: install.packages('ggplot2')")
-    }
-    library(ggplot2)
-    # dplyr is optional; load if available
-    if (requireNamespace("dplyr", quietly = TRUE)) {
-      library(dplyr)
-    }
-  })
-  cat("Libraries loaded OK\n")
-}, error = function(e) {
-  stop(paste("Failed to load required packages:", e$message))
+# --- Library Loading ---
+# Ensure required packages are available and load them quietly.
+suppressPackageStartupMessages({
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("The 'ggplot2' package is not installed. Please install it in the Docker container or your R environment.", call. = FALSE)
+  }
+  library(ggplot2)
+  
+  # Other packages are optional but useful.
+  if (requireNamespace("dplyr", quietly = TRUE)) {
+    library(dplyr)
+  }
+  if (requireNamespace("readr", quietly = TRUE)) {
+    library(readr)
+  }
 })
 
-# On Windows, prefer Cairo
-if (.Platform$OS.type == "windows") {
-  options(bitmapType = "cairo")
-}
-
-# Load CSV data (if provided)
+# --- Data Loading ---
+# Load the CSV data into a dataframe named 'df' if it's provided.
 if (!is.null(csv_data_file)) {
   df <- tryCatch({
+    # Prefer the faster readr::read_csv if available
     if (requireNamespace("readr", quietly = TRUE)) {
-      readr::read_csv(csv_data_file, show_col_types = FALSE)
+      readr::read_csv(csv_data_file, show_col_types = FALSE, progress = FALSE)
     } else {
       read.csv(csv_data_file, stringsAsFactors = FALSE, check.names = FALSE)
     }
-  }, error = function(e1) {
-    warning(paste("readr::read_csv failed (", e1$message, "); falling back to base::read.csv", sep = ""))
-    read.csv(csv_data_file, stringsAsFactors = FALSE, check.names = FALSE)
+  }, error = function(e) {
+    stop(paste("Failed to read CSV data:", e$message), call. = FALSE)
   })
-  cat(paste("Loaded CSV data with", nrow(df), "rows and", ncol(df), "columns\n"))
 } else {
+  # Create an empty dataframe if no data is provided.
   df <- data.frame()
-  cat("No CSV provided; using empty df\n")
 }
 
-# Execute user R code; expect ggplot object 'p'
+# --- Code Execution ---
+# Execute the user's script in a clean environment and look for a ggplot object named 'p'.
 p <- NULL
 tryCatch({
-  cat("Executing user R code...\n")
   user_env <- new.env(parent = .GlobalEnv)
-  user_env$df <- df
-  sys.source(input_r_code_file, envir = user_env, chdir = FALSE)
-  if (!exists("p", envir = user_env, inherits = FALSE)) {
-    # Fallback: try to use last ggplot if available
-    last <- try(ggplot2::last_plot(), silent = TRUE)
-    if (!inherits(last, "try-error") && inherits(last, "ggplot")) {
-      p <- last
-      assign("p", p, envir = user_env)
-      cat("'p' not found; using ggplot2::last_plot() as fallback\n")
-    } else {
-      stop("The R code must create a plot object named 'p'. Please ensure your R code ends with: p <- ggplot(...) + ...")
-    }
-  } else {
+  user_env$df <- df # Make the 'df' dataframe available to the script
+  source(input_r_code_file, local = user_env, chdir = FALSE)
+  
+  if (exists("p", envir = user_env, inherits = FALSE)) {
     p <- get("p", envir = user_env)
+  } else {
+    # If 'p' isn't explicitly assigned, try to grab the last plot made.
+    p <- ggplot2::last_plot()
   }
+  
   if (!inherits(p, "ggplot")) {
-    if (inherits(p, "recordedplot") || is.function(p)) {
-      stop("The object 'p' appears to be a base R plot. Please use ggplot2 for creating plots.")
-    } else {
-      stop(paste("The object 'p' must be a ggplot object. Current class:", paste(class(p), collapse = ", ")))
-    }
+    stop("The R code must produce a ggplot object. Ensure your code creates a plot assigned to a variable named 'p'.", call. = FALSE)
   }
-  cat(sprintf("Plot object 'p' found (class: %s)\n", paste(class(p), collapse = ", ")))
-  # Normalize background and margins
-  bg_color <- "#0a0a0a"
-  p <- p + ggplot2::theme(
-    plot.background = ggplot2::element_rect(fill = bg_color, color = NA),
-    # UPDATED: Increased margins to prevent labels from being cut off.
-    # The bottom margin (b) is larger to account for rotated x-axis text.
-    plot.margin = ggplot2::margin(t = 15, r = 25, b = 45, l = 15)
+  
+  # Apply consistent background and slightly larger margins to prevent clipping.
+  p <- p + theme(
+    plot.background = element_rect(fill = "#0a0a0a", color = NA),
+    plot.margin = margin(t = 20, r = 25, b = 55, l = 15) # Increased bottom margin for rotated labels
+  )
+  
+}, error = function(e) {
+  # Catch errors from the user's code and report them clearly.
+  stop(paste("Error executing R code:", e$message), call. = FALSE)
+})
+
+
+# --- Image Saving ---
+# Save the final plot object to the specified output file.
+tryCatch({
+  ggsave(
+    filename = output_image_file,
+    plot = p,
+    device = "png",
+    width = 6.4,
+    height = 4.8,
+    units = "in",
+    dpi = 150,
+    bg = "#0a0a0a",
+    limitsize = FALSE
   )
 }, error = function(e) {
-  stop(paste("Error executing R code:", e$message))
+  stop(paste("Failed to save the ggplot image:", e$message), call. = FALSE)
 })
 
-# Save plot with fallbacks
-target_width_in <- 6.4
-target_height_in <- 4.8
-target_dpi <- 150
-bg_color <- "#0a0a0a"
-output_dir <- dirname(output_image_file)
-if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
-
-# Validate plot build
-tryCatch({
-  built_plot <- ggplot2::ggplot_build(p)
-  if (is.null(built_plot)) stop("Plot build returned NULL")
-  if (length(built_plot$data) == 0) warning("Built plot has no data layers; saving anyway")
-}, error = function(e) {
-  stop(paste("Plot validation failed:", e$message))
-})
-
-# Avoid ragg by default; opt-in via VC_USE_RAGG=1
-use_ragg <- FALSE
-if (identical(tolower(Sys.getenv("VC_USE_RAGG", "0")), "1")) {
-  use_ragg <- isTRUE(requireNamespace("ragg", quietly = TRUE))
+# Final verification
+if (!file.exists(output_image_file) || file.size(output_image_file) == 0) {
+  stop("Script finished, but the output image file was not created or is empty.", call. = FALSE)
 }
-cat(sprintf("Saving plot (ragg=%s, cairo=%s)\n", use_ragg, isTRUE(capabilities("cairo"))))
-
-save_ok <- FALSE
-save_err <- NULL
-
-# 1) Optional ragg path
-if (!save_ok && use_ragg) {
-  try({
-    ragg::agg_png(
-      filename = output_image_file,
-      width = as.integer(target_width_in * target_dpi),
-      height = as.integer(target_height_in * target_dpi),
-      background = bg_color,
-      res = target_dpi
-    )
-    print(p)
-    dev.off()
-    save_ok <- TRUE
-  }, silent = TRUE)
-}
-
-# 2) ggsave with cairo when available
-if (!save_ok) {
-  tryCatch({
-    if (isTRUE(capabilities("cairo"))) {
-      ggsave(
-        filename = output_image_file,
-        plot = p,
-        width = target_width_in,
-        height = target_height_in,
-        dpi = target_dpi,
-        units = "in",
-        bg = bg_color,
-        device = "png",
-        type = "cairo",
-        limitsize = FALSE
-      )
-    } else {
-      ggsave(
-        filename = output_image_file,
-        plot = p,
-        width = target_width_in,
-        height = target_height_in,
-        dpi = target_dpi,
-        units = "in",
-        bg = bg_color,
-        device = "png",
-        limitsize = FALSE
-      )
-    }
-    save_ok <- TRUE
-  }, error = function(e) { save_err <<- e })
-}
-
-# 3) Fallback: base png()
-if (!save_ok) {
-  tryCatch({
-    if (isTRUE(capabilities("cairo"))) {
-      png(
-        filename = output_image_file,
-        width = as.integer(target_width_in * target_dpi),
-        height = as.integer(target_height_in * target_dpi),
-        res = target_dpi,
-        bg = bg_color,
-        type = "cairo"
-      )
-    } else {
-      png(
-        filename = output_image_file,
-        width = as.integer(target_width_in * target_dpi),
-        height = as.integer(target_height_in * target_dpi),
-        res = target_dpi,
-        bg = bg_color
-      )
-    }
-    print(p)
-    dev.off()
-    save_ok <- TRUE
-  }, error = function(e) { save_err <<- e })
-}
-
-if (!save_ok) {
-  stop(paste("Failed to save plot with all devices.", if (!is.null(save_err)) paste("Last error:", save_err$message) else ""))
-}
-
-# Verify output
-if (!file.exists(output_image_file)) stop("Output image file was not created")
-file_size <- file.size(output_image_file)
-if (is.na(file_size) || file_size == 0) stop("Output image file is empty")
-
-cat(sprintf(
-  "R script execution completed successfully (%dx%d px). Output file size: %d bytes\n",
-  as.integer(target_width_in * target_dpi),
-  as.integer(target_height_in * target_dpi),
-  file_size
-))
