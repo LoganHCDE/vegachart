@@ -57,11 +57,15 @@ def close_db(e=None):
 
 R_EXECUTABLE = 'Rscript' # The Dockerfile will ensure this is in the PATH
 
-def execute_python_code(code, csv_data=None):
+def execute_python_code(code, csv_data=None, bg_choice: str | None = None):
     # This function remains the same as your original
     try:
         img_buffer = io.BytesIO()
-        modified_code = code.replace('plt.show()', 'plt.savefig(img_buffer, format="png", bbox_inches="tight", dpi=150)\nplt.close()')
+        # Configure save behavior based on background choice
+        transparent = True if (bg_choice == 'transparent') else False
+        # Ensure we propagate the figure facecolor to the saved image and allow transparency when requested
+        save_repl = f'plt.savefig(img_buffer, format="png", bbox_inches="tight", dpi=150, facecolor=plt.gcf().get_facecolor(), edgecolor="none", transparent={str(transparent)})\nplt.close()'
+        modified_code = code.replace('plt.show()', save_repl)
         if csv_data:
             pd_read_csv_pattern = r'pd\.read_csv\s*\(\s*[\'"][^\'\"]*[\'"](?:\s*,\s*[^)]*)??\s*\)'
             csv_replacement = 'pd.read_csv(io.StringIO(csv_data_string))'
@@ -88,7 +92,7 @@ def execute_python_code(code, csv_data=None):
         logger.error(f"Python code execution failed: {e}")
         raise
 
-def execute_r_code(code, csv_data=None):
+def execute_r_code(code, csv_data=None, bg_choice: str | None = None):
     # This function remains the same as your original
     with tempfile.TemporaryDirectory() as temp_dir:
         r_code_file = os.path.join(temp_dir, 'user_script.R')
@@ -105,6 +109,9 @@ def execute_r_code(code, csv_data=None):
             with open(csv_data_file, 'w', encoding='utf-8') as f:
                 f.write(csv_data)
             r_command.append(csv_data_file)
+        # Pass background choice to R runner (optional 4th/5th arg overall)
+        if bg_choice:
+            r_command.append(bg_choice)
 
         logger.info(f"Executing R command: {' '.join(r_command)}")
         result = subprocess.run(
@@ -134,12 +141,14 @@ def generate_chart():
     language = data.get('language')
     code = data.get('code')
     csv_data = data.get('csvData')
+    # Prefer new image background field, fallback to legacy key
+    bg_choice = data.get('imgBgChoice') or data.get('bgChoice')
 
     try:
         if language == 'python':
-            image_buffer = execute_python_code(code, csv_data)
+            image_buffer = execute_python_code(code, csv_data, bg_choice)
         elif language == 'r':
-            image_buffer = execute_r_code(code, csv_data)
+            image_buffer = execute_r_code(code, csv_data, bg_choice)
         else:
             return jsonify({"error": "Invalid language specified"}), 400
         

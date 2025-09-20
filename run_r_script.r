@@ -6,12 +6,35 @@
 # --- Argument Parsing ---
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2) {
-  stop("Usage: Rscript run_r_script.R <input_r_code_file> <output_image_file> [csv_data_file]", call. = FALSE)
+  stop("Usage: Rscript run_r_script.R <input_r_code_file> <output_image_file> [csv_data_file] [bg_choice]", call. = FALSE)
 }
 
 input_r_code_file <- args[1]
 output_image_file <- args[2]
 csv_data_file <- if (length(args) >= 3) args[3] else NULL
+bg_choice <- if (length(args) >= 4) args[length(args)] else NULL
+
+# Map background choice to colors
+resolve_bg <- function(choice) {
+  if (is.null(choice) || is.na(choice) || choice == "") {
+    return(list(plot = "#0a0a0a", panel = "#1f2937", text = "white", grid = "gray30", transparent = FALSE))
+  }
+  switch(tolower(choice),
+    transparent = list(plot = NA, panel = NA, text = "white", grid = "gray60", transparent = TRUE),
+    white       = list(plot = "#ffffff", panel = "#ffffff", text = "#111827", grid = "#d1d5db", transparent = FALSE),
+    `light-gray`= list(plot = "#f3f4f6", panel = "#f3f4f6", text = "#111827", grid = "#cbd5e1", transparent = FALSE),
+    gray        = list(plot = "#111827", panel = "#1f2937", text = "#e5e7eb", grid = "#374151", transparent = FALSE),
+    blue        = list(plot = "#0c4a6e", panel = "#0ea5e9", text = "white", grid = "gray30", transparent = FALSE),
+    green       = list(plot = "#064e3b", panel = "#10b981", text = "white", grid = "gray30", transparent = FALSE),
+    yellow      = list(plot = "#78350f", panel = "#f59e0b", text = "#111827", grid = "gray40", transparent = FALSE),
+    orange      = list(plot = "#7c2d12", panel = "#fb923c", text = "#111827", grid = "gray40", transparent = FALSE),
+    purple      = list(plot = "#3b0764", panel = "#8b5cf6", text = "white", grid = "gray30", transparent = FALSE),
+    teal        = list(plot = "#042f2e", panel = "#14b8a6", text = "white", grid = "gray30", transparent = FALSE),
+    # default
+    list(plot = "#0a0a0a", panel = "#1f2937", text = "white", grid = "gray30", transparent = FALSE)
+  )
+}
+bg <- resolve_bg(bg_choice)
 
 # --- Pre-flight Checks ---
 if (!file.exists(input_r_code_file)) {
@@ -76,10 +99,12 @@ tryCatch({
     stop("The R code must produce a ggplot object. Ensure your code creates a plot assigned to a variable named 'p'.", call. = FALSE)
   }
   
-  # Apply consistent background and slightly larger margins to prevent clipping.
+  # Apply background and margins
   p <- p + theme(
-    plot.background = element_rect(fill = "#0a0a0a", color = NA),
-    plot.margin = margin(t = 20, r = 25, b = 20, l = 15) # Increased bottom margin for rotated labels
+    plot.background = element_rect(fill = bg$plot, color = NA),
+    panel.background = element_rect(fill = bg$panel, color = NA),
+    text = element_text(color = bg$text),
+    plot.margin = margin(t = 20, r = 25, b = 20, l = 15)
   )
   
 }, error = function(e) {
@@ -99,7 +124,7 @@ tryCatch({
     height = 4.8,
     units = "in",
     dpi = 150,
-    bg = "#0a0a0a",
+    bg = if (isTRUE(bg$transparent)) NA else bg$plot,
     limitsize = FALSE
   )
 }, error = function(e) {
