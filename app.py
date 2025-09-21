@@ -97,6 +97,14 @@ def execute_python_code(code, csv_data=None, img_bg_choice: str | None = None):
         modified_code = code.replace('plt.show()', save_repl)
         if csv_data:
             pd_read_csv_pattern = r'pd\.read_csv\s*\(\s*[\'"][^\'\"]*[\'"](?:\s*,\s*[^)]*)??\s*\)'
+            import csv
+            import io
+            output = io.StringIO()
+            if csv_data and len(csv_data) > 0:
+                writer = csv.DictWriter(output, fieldnames=csv_data[0].keys())
+                writer.writeheader()
+                writer.writerows(csv_data)
+            csv_data_string = output.getvalue()
             csv_replacement = 'pd.read_csv(io.StringIO(csv_data_string))'
             modified_code = re.sub(pd_read_csv_pattern, csv_replacement, modified_code)
             import_lines = []
@@ -111,7 +119,7 @@ def execute_python_code(code, csv_data=None, img_bg_choice: str | None = None):
             if 'import io' not in modified_code:
                 code_lines.insert(insert_index, 'import io')
                 insert_index += 1
-            code_lines.insert(insert_index, f'csv_data_string = """{csv_data}"""')
+            code_lines.insert(insert_index, f'csv_data_string = """{csv_data_string}"""')
             modified_code = '\n'.join(code_lines)
         plt.clf()
         exec(modified_code)
@@ -134,9 +142,13 @@ def execute_r_code(code, csv_data=None, img_bg_choice: str | None = None, chart_
         r_command = [R_EXECUTABLE, runner_script_path, r_code_file, output_plot_file]
 
         if csv_data:
+            import csv
             csv_data_file = os.path.join(temp_dir, 'data.csv')
-            with open(csv_data_file, 'w', encoding='utf-8') as f:
-                f.write(csv_data)
+            with open(csv_data_file, 'w', newline='', encoding='utf-8') as f:
+                if csv_data and len(csv_data) > 0:
+                    writer = csv.DictWriter(f, fieldnames=csv_data[0].keys())
+                    writer.writeheader()
+                    writer.writerows(csv_data)
             r_command.append(csv_data_file)
         # Pass background choices to R runner (optional trailing args)
         if img_bg_choice:
@@ -171,7 +183,7 @@ def generate_chart():
     data = request.get_json()
     language = data.get('language')
     code = data.get('code')
-    csv_data = data.get('csvData')
+    csv_data = data.get('data')
     # Prefer new image background field, fallback to legacy key
     img_bg_choice = data.get('imgBgChoice') or data.get('bgChoice')
     chart_bg_choice = data.get('chartBgChoice')
