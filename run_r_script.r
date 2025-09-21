@@ -6,35 +6,75 @@
 # --- Argument Parsing ---
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2) {
-  stop("Usage: Rscript run_r_script.R <input_r_code_file> <output_image_file> [csv_data_file] [bg_choice]", call. = FALSE)
+  stop("Usage: Rscript run_r_script.R <input_r_code_file> <output_image_file> [csv_data_file] [img_bg_choice] [chart_bg_choice]", call. = FALSE)
 }
 
 input_r_code_file <- args[1]
 output_image_file <- args[2]
-csv_data_file <- if (length(args) >= 3) args[3] else NULL
-bg_choice <- if (length(args) >= 4) args[length(args)] else NULL
+remaining_args <- if (length(args) > 2) args[3:length(args)] else character(0)
 
-# Map background choice to colors
-resolve_bg <- function(choice) {
-  if (is.null(choice) || is.na(choice) || choice == "") {
-    return(list(plot = "#0a0a0a", panel = "#1f2937", text = "white", grid = "gray30", transparent = FALSE))
+csv_data_file <- NULL
+img_bg_choice <- NULL
+chart_bg_choice <- NULL
+
+if (length(remaining_args) >= 1) {
+  candidate <- remaining_args[1]
+  if (!identical(candidate, "") && file.exists(candidate)) {
+    csv_data_file <- candidate
+    remaining_args <- remaining_args[-1]
   }
-  switch(tolower(choice),
-    transparent = list(plot = NA, panel = NA, text = "white", grid = "gray60", transparent = TRUE),
-    white       = list(plot = "#ffffff", panel = "#ffffff", text = "#111827", grid = "#d1d5db", transparent = FALSE),
-    `light-gray`= list(plot = "#f3f4f6", panel = "#f3f4f6", text = "#111827", grid = "#cbd5e1", transparent = FALSE),
-    gray        = list(plot = "#111827", panel = "#1f2937", text = "#e5e7eb", grid = "#374151", transparent = FALSE),
-    blue        = list(plot = "#0c4a6e", panel = "#0ea5e9", text = "white", grid = "gray30", transparent = FALSE),
-    green       = list(plot = "#064e3b", panel = "#10b981", text = "white", grid = "gray30", transparent = FALSE),
-    yellow      = list(plot = "#78350f", panel = "#f59e0b", text = "#111827", grid = "gray40", transparent = FALSE),
-    orange      = list(plot = "#7c2d12", panel = "#fb923c", text = "#111827", grid = "gray40", transparent = FALSE),
-    purple      = list(plot = "#3b0764", panel = "#8b5cf6", text = "white", grid = "gray30", transparent = FALSE),
-    teal        = list(plot = "#042f2e", panel = "#14b8a6", text = "white", grid = "gray30", transparent = FALSE),
-    # default
-    list(plot = "#0a0a0a", panel = "#1f2937", text = "white", grid = "gray30", transparent = FALSE)
-  )
 }
-bg <- resolve_bg(bg_choice)
+
+if (length(remaining_args) >= 1) {
+  img_bg_choice <- remaining_args[1]
+  remaining_args <- remaining_args[-1]
+}
+
+if (length(remaining_args) >= 1) {
+  chart_bg_choice <- remaining_args[1]
+  remaining_args <- remaining_args[-1]
+}
+
+# Map UI image and chart background selections to colors
+resolve_image_bg <- function(choice) {
+  if (is.null(choice) || is.na(choice) || choice == "") {
+    choice <- "default"
+  }
+  res <- switch(tolower(choice),
+    transparent = list(plot = NA, ggsave = NA, text = "#ffffff", transparent = TRUE),
+    white       = list(plot = "#ffffff", ggsave = "#ffffff", text = "#111827", transparent = FALSE),
+    blue        = list(plot = "#0b1220", ggsave = "#0b1220", text = "#e5e7eb", transparent = FALSE),
+    default     = list(plot = "#0a0a0a", ggsave = "#0a0a0a", text = "#ffffff", transparent = FALSE)
+  )
+  if (is.null(res)) {
+    res <- list(plot = "#0a0a0a", ggsave = "#0a0a0a", text = "#ffffff", transparent = FALSE)
+  }
+  res
+}
+
+resolve_chart_bg <- function(choice) {
+  if (is.null(choice) || is.na(choice) || choice == "") {
+    choice <- "default"
+  }
+  res <- switch(tolower(choice),
+    transparent = list(panel = NA, grid = "gray60"),
+    white       = list(panel = "#ffffff", grid = "#d1d5db"),
+    blue        = list(panel = "#0b1220", grid = "#374151"),
+    green       = list(panel = "#10b981", grid = "#065f46"),
+    yellow      = list(panel = "#f59e0b", grid = "#7c2d12"),
+    orange      = list(panel = "#fb923c", grid = "#7c2d12"),
+    purple      = list(panel = "#8b5cf6", grid = "#4c1d95"),
+    teal        = list(panel = "#14b8a6", grid = "#134e4a"),
+    default     = list(panel = NA, grid = "#374151")
+  )
+  if (is.null(res)) {
+    res <- list(panel = NA, grid = "#374151")
+  }
+  res
+}
+
+image_bg <- resolve_image_bg(img_bg_choice)
+chart_bg <- resolve_chart_bg(if (!is.null(chart_bg_choice) && chart_bg_choice != "") chart_bg_choice else img_bg_choice)
 
 # --- Pre-flight Checks ---
 if (!file.exists(input_r_code_file)) {
@@ -99,13 +139,27 @@ tryCatch({
     stop("The R code must produce a ggplot object. Ensure your code creates a plot assigned to a variable named 'p'.", call. = FALSE)
   }
   
-  # Apply background and margins
-  p <- p + theme(
-    plot.background = element_rect(fill = bg$plot, color = NA),
-    panel.background = element_rect(fill = bg$panel, color = NA),
-    text = element_text(color = bg$text),
+  # Apply background and margins to respect UI selections
+  plot_bg_element <- if (isTRUE(image_bg$transparent)) {
+    element_rect(fill = NA, color = NA)
+  } else {
+    element_rect(fill = image_bg$plot, color = NA)
+  }
+
+  panel_bg_element <- element_rect(fill = chart_bg$panel, color = NA)
+
+  theme_args <- list(
+    plot.background = plot_bg_element,
+    panel.background = panel_bg_element,
+    text = element_text(color = image_bg$text),
     plot.margin = margin(t = 20, r = 25, b = 20, l = 15)
   )
+
+  if (!is.null(chart_bg$grid) && !(length(chart_bg$grid) == 1 && is.na(chart_bg$grid))) {
+    theme_args$panel.grid <- element_line(color = chart_bg$grid)
+  }
+
+  p <- p + do.call(theme, theme_args)
   
 }, error = function(e) {
   # Catch errors from the user's code and report them clearly.
@@ -124,7 +178,7 @@ tryCatch({
     height = 4.8,
     units = "in",
     dpi = 150,
-    bg = if (isTRUE(bg$transparent)) NA else bg$plot,
+    bg = if (isTRUE(image_bg$transparent)) NA else image_bg$ggsave,
     limitsize = FALSE
   )
 }, error = function(e) {
