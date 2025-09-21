@@ -92,9 +92,9 @@ suppressPackageStartupMessages({
   }
   library(ggplot2)
   
-  # Other packages are optional but useful.
-  if (requireNamespace("dplyr", quietly = TRUE)) {
-    library(dplyr)
+  # Prefer data.table for fast manipulation and CSV I/O; others are optional fallbacks
+  if (requireNamespace("data.table", quietly = TRUE)) {
+    library(data.table)
   }
   if (requireNamespace("readr", quietly = TRUE)) {
     library(readr)
@@ -105,8 +105,10 @@ suppressPackageStartupMessages({
 # Load the CSV data into a dataframe named 'df' if it's provided.
 if (!is.null(csv_data_file)) {
   df <- tryCatch({
-    # Prefer the faster readr::read_csv if available
-    if (requireNamespace("readr", quietly = TRUE)) {
+    # Prefer the fastest available loader: data.table::fread, then readr::read_csv, then base::read.csv
+    if (requireNamespace("data.table", quietly = TRUE)) {
+      data.table::fread(csv_data_file, showProgress = FALSE)
+    } else if (requireNamespace("readr", quietly = TRUE)) {
       # **FIX: Removed the 'show_col_types' argument for compatibility with older readr versions**
       readr::read_csv(csv_data_file, progress = FALSE)
     } else {
@@ -115,6 +117,13 @@ if (!is.null(csv_data_file)) {
   }, error = function(e) {
     stop(paste("Failed to read CSV data:", e$message), call. = FALSE)
   })
+  
+  # Ensure df is a data.table when the package is available (for efficient manipulation)
+  if (requireNamespace("data.table", quietly = TRUE)) {
+    if (!data.table::is.data.table(df)) {
+      df <- data.table::as.data.table(df)
+    }
+  }
 } else {
   # Create an empty dataframe if no data is provided.
   df <- data.frame()
