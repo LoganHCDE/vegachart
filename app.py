@@ -62,9 +62,38 @@ def execute_python_code(code, csv_data=None, img_bg_choice: str | None = None):
     try:
         img_buffer = io.BytesIO()
         # Configure save behavior based on background choice
-        transparent = True if (img_bg_choice == 'transparent') else False
-        # Ensure we propagate the figure facecolor to the saved image and allow transparency when requested
-        save_repl = f'plt.savefig(img_buffer, format="png", bbox_inches="tight", dpi=150, facecolor=plt.gcf().get_facecolor(), edgecolor="none", transparent={str(transparent)})\nplt.close()'
+        # IMPORTANT: Using transparent=True in savefig makes BOTH the figure and axes
+        # backgrounds transparent, which removes the chart "panel" color and can make
+        # grid lines appear to change color. To keep the chart (axes) background color
+        # while still exporting a transparent image background around the plot, we:
+        #  - Make only the figure patch transparent (alpha=0)
+        #  - Force axes facecolor alpha to 1 (preserve chosen chart background)
+        #  - Save with transparent=False and an explicit figure facecolor RGBA=(0,0,0,0)
+        if img_bg_choice == 'transparent':
+            save_repl = (
+                'fig = plt.gcf()\n'
+                '# Make the outer figure background transparent, keep axes background opaque\n'
+                'try:\n    fig.patch.set_alpha(0.0)\nexcept Exception:\n    pass\n'
+                'for ax in fig.get_axes():\n'
+                '    try:\n'
+                '        fc = ax.get_facecolor()\n'
+                '        # Ensure axes facecolor remains opaque (alpha=1)\n'
+                '        if isinstance(fc, tuple) and len(fc) == 4:\n'
+                '            ax.set_facecolor((fc[0], fc[1], fc[2], 1.0))\n'
+                '    except Exception:\n'
+                '        pass\n'
+                'plt.savefig(img_buffer, format="png", bbox_inches="tight", dpi=150, '
+                'facecolor=(0,0,0,0), edgecolor="none", transparent=False)\n'
+                'plt.close()'
+            )
+        else:
+            # Non-transparent image background: use the current figure facecolor
+            save_repl = (
+                'fig = plt.gcf()\n'
+                'plt.savefig(img_buffer, format="png", bbox_inches="tight", dpi=150, '
+                'facecolor=fig.get_facecolor(), edgecolor="none", transparent=False)\n'
+                'plt.close()'
+            )
         modified_code = code.replace('plt.show()', save_repl)
         if csv_data:
             pd_read_csv_pattern = r'pd\.read_csv\s*\(\s*[\'"][^\'\"]*[\'"](?:\s*,\s*[^)]*)??\s*\)'
