@@ -5,3 +5,5 @@ flask-cors
 matplotlib
 pandas
 seaborn
+numpy
+scipy
