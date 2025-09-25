@@ -387,6 +387,22 @@ def track_event():
 def index():
     return app.send_static_file('chart.html')
 
+
+
+@app.route('/about')
+def about_page():
+    return app.send_static_file('about.html')
+
+
+@app.route('/guide')
+def guide_page():
+    return app.send_static_file('guide.html')
+
+
+@app.route('/feedback')
+def feedback_page():
+    return app.send_static_file('feedback.html')
+
 @app.route('/<path:filename>')
 def serve_static(filename):
     return send_from_directory('.', filename)

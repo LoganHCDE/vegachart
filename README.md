@@ -1,282 +1,135 @@
-# VegaChart (Flask + Python/R Chart Generation Service)
+# Data Visualization Backend
 
-VegaChart is a lightweight Flask-based API service that executes user-provided Python (matplotlib / seaborn) or R (ggplot2) plotting code and returns a rendered PNG image. It is designed for an interactive front‑end that sends chart code and optional tabular data (CSV) to the backend for rapid visualization prototyping.
+A Flask-based backend server for handling data visualization requests from the frontend index page (`./`).
 
-The application supports:
-- Dynamic Python plotting code execution (matplotlib / seaborn / pandas)
-- Dynamic R ggplot2 execution via an isolated runner script (`run_r_script.r`)
-- Optional CSV data injection (passed inline from the client)
-- Customizable image & chart background themes
-- Optional panel grid line toggling (R path)
-- Feedback + lightweight analytics endpoints (PostgreSQL optional)
-- Containerized deployment (Docker) + Heroku runtime configuration
+## Features
 
-> IMPORTANT: This service executes arbitrary code. Treat it as an internal/tooling component. Never expose it publicly without strong sandboxing, auth, rate-limits, and resource constraints.
+- **Flask API**: Single endpoint `/generate-chart` that executes code and returns images
+- **CORS Support**: Enabled for cross-origin requests from local HTML files
+- **Code Execution**: Real Python and R code execution with plot generation
+- **Image Response**: Returns generated plots as PNG images via HTTP
+- **Error Handling**: Comprehensive error handling with proper HTTP status codes
+- **Language Support**: 
+  - **Python**: Executes matplotlib/seaborn code, converts `plt.show()` to image buffer
+  - **R**: Executes ggplot2 code using rpy2, converts `print(p)` to `ggsave()`
 
----
-## Table of Contents
-1. Features
-2. Architecture Overview
-3. API Reference
-4. Background / Theming Options
-5. Environment Variables
-6. Local Development
-7. Running with Docker
-8. Deploying to Heroku
-9. (Optional) Fly.io Notes
-10. Database (PostgreSQL) Usage
-11. Security Considerations
-12. Troubleshooting
-13. Future Improvements
-14. License
+## Installation
 
----
-## 1. Features
-- Dual-language chart execution: Python (`matplotlib`) and R (`ggplot2`).
-- In-memory PNG generation (no temp files for Python path; R uses temp dir).
-- CSV injection: server swaps user `read_csv` calls (Python) or loads a df in R.
-- Theme mapping for image background vs chart panel background.
-- Graceful fallback if `DATABASE_URL` is not set (feedback endpoints degrade politely).
-- Structured logging for execution timing + process diagnostics.
+1. Navigate to the project directory:
+   ```bash
+   cd "c:\Users\logtu\Desktop\Vega_chart"
+   ```
 
----
-## 2. Architecture Overview
+2. Create and activate a virtual environment (if not already done):
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate
+   ```
 
-```
-Client (Browser / App)
-  | JSON: { language, code, data (CSV), imgBgChoice, chartBgChoice, showGridLines }
-  v
-Flask API (/api/generate-chart)
-  |-- Python path → in‑process exec() of sanitized/injected code
-  |-- R path      → writes code & data to temp dir → invokes Rscript runner
-  v
-PNG Buffer → HTTP Response (image/png base64 or binary depending on client usage)
+3. Install required packages:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-Optional PostgreSQL (feedback / analytics) via psycopg2 pool
-```
+## Running the Server
 
-Components:
-- `app.py` — Flask app, endpoints, Python execution logic, DB pool.
-- `run_r_script.r` — Robust ggplot2 executor: theming, error cleaning, safe loading.
-- `Dockerfile` — Multi-stage style base build (Python + system deps + R toolchain).
-- `heroku.yml` — Declarative container deployment for Heroku (uses Dockerfile).
-
----
-## 3. API Reference
-
-### POST `/api/generate-chart`
-Generate a chart from user code.
-
-Request (JSON):
-```
-{
-  "language": "python" | "r",
-  "code": "<plotting code>",
-  "data": "col1,col2\n1,2\n3,4\n",          // optional CSV text
-  "imgBgChoice": "dark" | "white" | "blue" | "transparent" | ...,
-  "chartBgChoice": "white" | "teal" | ... ,   // optional (panel background override)
-  "showGridLines": true | false               // R only (optional)
-}
-```
-Successful Response (JSON example – adjust to your client spec):
-```
-{
-  "status": "ok",
-  "image": "data:image/png;base64,...."  // or raw bytes if configured
-}
-```
-Error Response:
-```
-{
-  "status": "error",
-  "message": "Human-readable explanation"
-}
-```
-Notes:
-- Python path auto-injects a save snippet if `plt.show()` omitted.
-- R path expects a ggplot object named `p` (the runner enforces this).
-
-### POST `/api/submit-feedback`
-Stores user feedback (text + optional metadata).
-
-Request JSON (example):
-```
-{
-  "rating": 5,
-  "comment": "Loved the dark theme.",
-  "context": { "chartType": "scatter" }
-}
-```
-Responses:
-- 200 JSON `{ "status": "stored" }` if DB available.
-- 503 / graceful JSON fallback if `DATABASE_URL` not configured.
-
-### POST `/api/track-event`
-Lightweight analytics event logging.
-
-Request JSON:
-```
-{ "event": "chart_render", "meta": { "language": "python" } }
-```
-Responses similar to feedback endpoint.
-
-### GET `/` and Static Assets
-Serves `chart.html` (if present) and any static file from project root.
-
----
-## 4. Background / Theming Options
-Two theme layers:
-- Image background (overall canvas / PNG background).
-- Chart panel background (R + Python injection logic; panel vs figure distinction).
-
-Common choices (subset): `transparent`, `white`, `blue`, `green`, `yellow`, `orange`, `purple`, `teal`, `default` (dark). If `chartBgChoice` omitted, logic may reuse image background or fall back to dark.
-
-R runner resolves:
-- Image text color & transparency.
-- Panel fill, grid line color, conditional grid toggling.
-
----
-## 5. Environment Variables
-| Variable        | Description | Default / Required |
-|-----------------|-------------|--------------------|
-| `PORT`          | Port for Gunicorn/Flask (Heroku provides) | 8080 locally |
-| `DATABASE_URL`  | PostgreSQL connection string | Optional (disables feedback/events if absent) |
-| `PYTHONUNBUFFERED` | Ensures real-time logging | `1` |
-| `PYTHONDONTWRITEBYTECODE` | Avoids `.pyc` creation | `1` |
-
-For local Postgres you can set (example):
-```
-DATABASE_URL=postgresql://user:pass@localhost:5432/vegachart
-```
-
----
-## 6. Local Development
-### Prerequisites
-- Python 3.11+
-- (Optional) R installation with `ggplot2`, `readr`, etc., if you want R path locally.
-
-### Setup
-```
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-pip install --upgrade pip
-pip install -r requirements.txt
-set FLASK_ENV=development        # (optional for debug)
+Start the Flask development server:
+```bash
 python app.py
 ```
-Visit: http://localhost:8080/
 
-### Testing R Execution Locally
-If you have R installed:
-```
-Rscript run_r_script.r  # (will show usage error, but confirms Rscript availability)
-```
-Then POST to `/api/generate-chart` with `language: "r"`.
+The server will start on `http://127.0.0.1:5000` with debug mode enabled.
 
----
-## 7. Running with Docker
-Build & run (local):
-```
-docker build -t vegachart .
-docker run -p 8080:8080 vegachart
-```
-Add DB:
-```
-docker run -e DATABASE_URL=postgresql://... -p 8080:8080 vegachart
+## API Endpoints
+
+### POST `/generate-chart`
+
+Accepts code execution requests and returns confirmation.
+
+**Request Body:**
+```json
+{
+    "language": "python",  // or "r"
+    "code": "import matplotlib.pyplot as plt\nimport numpy as np\n\nx = np.linspace(0, 10, 100)\ny = np.sin(x)\n\nplt.figure(figsize=(10, 6))\nplt.plot(x, y)\nplt.title('Sine Wave')\nplt.show()"
+}
 ```
 
----
-## 8. Deploying to Heroku
-This repo includes a `heroku.yml` for container deployment.
+**Response:**
+- **Success**: Returns PNG image data directly (Content-Type: image/png)
+- **Error**: Returns JSON error message with appropriate HTTP status code
 
-Steps:
-1. Enable container stack: `heroku stack:set container -a <app-name>`
-2. Push: `git push heroku main`
-3. Heroku will build via Dockerfile and run: `gunicorn --bind 0.0.0.0:$PORT ...`
-
-Ensure a Postgres addon if you want persistence:
-```
-heroku addons:create heroku-postgresql:mini -a <app-name>
-```
-Heroku sets `DATABASE_URL` automatically.
-
----
-## 9. (Optional) Fly.io Notes
-Code references Fly.io (comment about `DATABASE_URL`). To deploy to Fly:
-```
-fly launch        # generates fly.toml (if not present)
-fly deploy
-```
-Attach Postgres: `fly postgres create` + `fly postgres attach` to set `DATABASE_URL`.
-
----
-## 10. Database (PostgreSQL) Usage
-- Connection pooling via `psycopg2.pool.SimpleConnectionPool(1, 20)`.
-- Disabled gracefully if `DATABASE_URL` missing (feedback/events endpoints return fallback JSON or error status). 
-- Ensure proper migrations / table creation (not included here). You must create tables manually (e.g., `feedback`, `events`). Example quick schema:
-```
-CREATE TABLE feedback (
-  id SERIAL PRIMARY KEY,
-  rating INT,
-  comment TEXT,
-  context JSONB,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE TABLE events (
-  id SERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
-  meta JSONB,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+**Example Error Response:**
+```json
+{
+    "error": "Python execution failed: NameError: name 'invalid_variable' is not defined"
+}
 ```
 
----
-## 11. Security Considerations
-| Risk | Mitigation Ideas (Not Implemented) |
-|------|------------------------------------|
-| Arbitrary code execution | Use container isolation per request, time & memory limits, seccomp, firejail, or remote sandbox. |
-| Denial of service (infinite loops) | Execution timeouts (Python manual, R subprocess timeout). Add CPU quotas. |
-| Data exfiltration | Block network egress in runtime container. |
-| File system access | Run as non-root (`appuser`), restrict mounts, consider read-only FS. |
-| Excessive memory (large figures) | Enforce max CSV size & code length pre-check. |
+### GET `/health`
 
-DO NOT expose this API publicly until hardened.
+Health check endpoint.
 
----
-## 12. Troubleshooting
-| Symptom | Possible Cause | Fix |
-|---------|----------------|-----|
-| R timeout | Long-running plot | Simplify code; adjust timeout in `subprocess.run(...)`. |
-| Empty image | User code never created a figure (Python) | Auto-fallback creates blank; ensure `plt.plot(...)`. |
-| "Missing R package" | R lib not installed inside container | Modify Dockerfile R install list. |
-| DB errors | `DATABASE_URL` unset or wrong | Export correct connection string. |
-| Heroku crash (memory) | R build size | Reduce R packages to essential subset. |
+**Response:**
+```json
+{
+    "status": "healthy",
+    "service": "Data Visualization Backend"
+}
+```
 
-Logs (Python): execution timing prefixed with `[PYEXEC]` / `[REXEC]`.
+## Error Handling
 
----
-## 13. Future Improvements
-- Add unit tests & CI.
-- Implement code sandboxing (Firecracker / gVisor).
-- Stream image generation progress/events.
-- Add SVG output option.
-- Rate limiting & authentication (API key or OAuth). 
-- Structured error codes for front-end mapping.
+The API includes proper error handling for:
+- Missing JSON data
+- Missing required fields (`language`, `code`)
+- Invalid language values (must be "python" or "r")
+- Server errors
 
----
-## 14. License
-No explicit license file provided. Consider adding an open-source license (e.g., MIT, Apache-2.0) if you intend to share publicly.
+## CORS Configuration
 
----
-## Quick Reference
-| Item | Location |
-|------|----------|
-| Flask App | `app.py` |
-| R Runner | `run_r_script.r` |
-| Container Spec | `Dockerfile` |
-| Heroku Config | `heroku.yml` |
-| Python Deps | `requirements.txt` |
+CORS is enabled for all origins, allowing your `./` page to communicate with the server when opened locally in a browser.
 
----
-Feel free to adapt this README as the project evolves. Contributions and hardening steps are strongly encouraged before any public exposure.
+## Prerequisites
+
+### For Python Code Execution
+- Python 3.7+ with matplotlib, pandas, seaborn, numpy
+- All Python dependencies are automatically installed via requirements.txt
+
+### For R Code Execution  
+- **R must be installed on the system**: Download from https://cran.r-project.org/
+- **Required R packages**: Install in R with `install.packages(c("ggplot2", "dplyr", "readr", "tidyr", "purrr", "stringr", "lubridate"))`
+- **Environment variable**: R_HOME must be set (usually automatic with R installation)
+
+## Code Execution Details
+
+### Python Code Processing
+- Automatically replaces `plt.show()` with `plt.savefig()` to image buffer
+- Uses matplotlib's 'Agg' backend for server environments (non-interactive)
+- Returns high-quality PNG images (150 DPI)
+- Supports all matplotlib/seaborn/pandas plotting functionality
+
+### R Code Processing  
+- Uses rpy2 to execute R code from Python
+- Automatically appends `ggsave()` command to save plots
+- Removes existing `print(p)` statements
+- Requires ggplot2 object to be named 'p'
+- Creates temporary files that are automatically cleaned up
+
+## Testing
+
+Run the test suite to verify functionality:
+```bash
+# Test individual functions
+python test_standalone.py
+
+# Test complete integration (starts server on port 5001)
+python test_integration.py
+```
+
+## Development Notes
+
+- Debug mode is enabled for development convenience
+- CORS allows testing with local HTML files
+- Comprehensive error handling for malformed code
+- Automatic cleanup of temporary R plot files
+- Thread-safe execution for concurrent requests
