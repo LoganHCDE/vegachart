@@ -1,0 +1,9 @@
+Flask
+gunicorn
+psycopg2-binary
+flask-cors
+matplotlib
+pandas
+seaborn
+numpy
+scipy
