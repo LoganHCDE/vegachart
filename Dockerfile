@@ -65,4 +65,4 @@ USER appuser
 
 # Expose port and define runtime command
 EXPOSE 8080
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "45", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "45", "app:app"]
