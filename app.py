@@ -314,18 +314,34 @@ def execute_r_code(code, csv_data=None, img_bg_choice: str | None = None, chart_
 
 # --- API Endpoints ---
 
-@app.route('/api/generate-chart', methods=['POST', 'OPTIONS']) # Added OPTIONS here
+@app.route('/api/generate-chart', methods=['POST', 'OPTIONS'])
 def generate_chart():
-    # 1. Handle the CORS Preflight
+    # 1. Handle the CORS Preflight request immediately
     if request.method == 'OPTIONS':
         return '', 204
+
+    # 2. Your existing logic continues here...
+    data = request.get_json()
+    language = data.get('language')
+    code = data.get('code')
+    csv_data = data.get('data')
     
-    # 2. Your actual chart logic starts here...
+    # Prefer new image background field, fallback to legacy key
+    img_bg_choice = data.get('imgBgChoice') or data.get('bgChoice')
+    chart_bg_choice = data.get('chartBgChoice')
+    show_grid_lines = data.get('showGridLines')
+
     try:
-        data = request.get_json()
-        # ... (all your pandas/matplotlib code) ...
-        return send_file(img_io, mimetype='image/png')
+        if language == 'python':
+            image_buffer = execute_python_code(code, csv_data, img_bg_choice, chart_bg_choice)
+        elif language == 'r':
+            image_buffer = execute_r_code(code, csv_data, img_bg_choice, chart_bg_choice, show_grid_lines)
+        else:
+            return jsonify({"error": "Invalid language specified"}), 400
+        
+        return send_file(image_buffer, mimetype='image/png')
     except Exception as e:
+        logger.error(f"Chart generation failed: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/submit-feedback', methods=['POST'])
