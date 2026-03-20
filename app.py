@@ -24,16 +24,6 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 # Enable CORS for the whole app as a safety net
 CORS(app) 
-
-@app.route('/generate-chart', methods=['POST', 'OPTIONS'])
-def generate_chart():
-    # 1. Catch the preflight request and approve it immediately
-    if request.method == 'OPTIONS':
-        return '', 204
-        
-    # 2. Your actual chart generation code runs ONLY if it's a POST request
-    data = request.get_json()
-
 # --- Database Connection Pool ---
 # Fly.io provides the DATABASE_URL environment variable automatically when you attach a Postgres db
 try:
