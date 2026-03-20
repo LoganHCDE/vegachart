@@ -409,6 +409,6 @@ def serve_static(filename):
 
 if __name__ == '__main__':
     # This block is for local development, not for production on Fly.io
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
 
